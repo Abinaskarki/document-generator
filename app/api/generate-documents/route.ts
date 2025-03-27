@@ -1,29 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server";
-import {
-  parseCSV,
-  processTemplate,
-  processDocxTemplate,
-} from "@/lib/document-processor";
+import { parseCSV, processTemplate } from "@/lib/document-processor";
 import { v4 as uuidv4 } from "uuid";
 import { collection, addDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db } from "@/lib/firebase";
-import puppeteer from "puppeteer"; // For HTML to PDF conversion
+import puppeteer from "puppeteer";
+import { PDFDocument } from "pdf-lib";
 
 const storage = getStorage();
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const templateFile = formData.get("template") as File;
+    const templateHtml = formData.get("templateHtml") as File;
     const csvFile = formData.get("csv") as File;
 
     // Validate required files
-    if (!templateFile || !csvFile) {
+    if (!templateHtml || !csvFile) {
       return NextResponse.json(
         {
-          error: "Both template and CSV files are required",
-          details: "Please upload a template file and a CSV file",
+          error: "Both template HTML and CSV files are required",
+          details: "Please upload a template HTML file and a CSV file",
         },
         { status: 400 }
       );
@@ -32,11 +29,11 @@ export async function POST(request: NextRequest) {
     // Generate a unique batch ID
     const batchId = `custom-${uuidv4()}`;
 
-    // Upload the original template to Firebase Storage
-    const templateBuffer = await templateFile.arrayBuffer();
+    // Upload the original template HTML to Firebase Storage
+    const templateBuffer = await templateHtml.arrayBuffer();
     const templateRef = ref(
       storage,
-      `templates/${batchId}/${templateFile.name}`
+      `templates/${batchId}/${templateHtml.name}`
     );
     await uploadBytes(templateRef, new Uint8Array(templateBuffer));
     const templateUrl = await getDownloadURL(templateRef);
@@ -64,24 +61,23 @@ export async function POST(request: NextRequest) {
 
     // Generate documents and merge them into a single PDF
     const pdfPages: Uint8Array[] = [];
-    for (const row of csvData) {
-      if (
-        templateFile.name.endsWith(".docx") ||
-        templateFile.name.endsWith(".doc")
-      ) {
-        // Use the processDocxTemplate utility function
-        const htmlWithStyles = await processDocxTemplate(templateBuffer, row);
+    const templateHtmlContent = new TextDecoder().decode(templateBuffer);
 
-        // Convert the processed HTML to PDF using Puppeteer
-        const pdfPage = await convertHtmlToPdf(htmlWithStyles);
-        pdfPages.push(pdfPage);
-      } else {
-        // Process HTML template and convert to PDF
-        const templateContent = new TextDecoder().decode(templateBuffer);
-        const documentContent = processTemplate(templateContent, row);
-        const pdfPage = await convertHtmlToPdf(documentContent);
-        pdfPages.push(pdfPage);
-      }
+    for (const row of csvData) {
+      // Replace placeholders in the HTML content
+      const processedHtml = processTemplate(templateHtmlContent, row);
+
+      // Add custom CSS for paragraph spacing
+      const htmlWithStyles = `
+        <style>
+          p { margin-bottom: 1em; }
+        </style>
+        ${processedHtml}
+      `;
+
+      // Convert the processed HTML to PDF using Puppeteer
+      const pdfPage = await convertHtmlToPdf(htmlWithStyles);
+      pdfPages.push(pdfPage);
     }
 
     // Create a single PDF from all pages
@@ -101,13 +97,7 @@ export async function POST(request: NextRequest) {
       csvUrl,
       pdfUrl,
       documentCount: csvData.length,
-      placeholders: [], // Add placeholders if needed
-      matchedPlaceholders: [], // Add matched placeholders if needed
       csvHeaders: Object.keys(csvData[0]),
-      metadata: {
-        templateName: templateFile.name,
-        csvName: csvFile.name,
-      },
     });
 
     return NextResponse.json({
@@ -138,4 +128,23 @@ async function convertHtmlToPdf(htmlContent: string): Promise<Uint8Array> {
   const pdfBuffer = await page.pdf({ format: "A4" });
   await browser.close();
   return pdfBuffer;
+}
+
+// Helper function to merge multiple PDF pages into a single PDF
+async function createPDF(pages: ArrayBuffer[]): Promise<Uint8Array> {
+  try {
+    const mergedPdf = await PDFDocument.create();
+
+    for (const pageBuffer of pages) {
+      const pdf = await PDFDocument.load(pageBuffer);
+      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+      copiedPages.forEach((page) => mergedPdf.addPage(page));
+    }
+
+    const mergedPdfBytes = await mergedPdf.save();
+    return new Uint8Array(mergedPdfBytes);
+  } catch (error) {
+    console.error("Error merging PDF pages:", error);
+    throw new Error("Failed to merge PDF pages");
+  }
 }
