@@ -57,6 +57,7 @@ const DocumentContext = createContext<DocumentContextType>({
 const BATCHES_STORAGE_KEY = "document_generator_batches";
 const DOCUMENTS_STORAGE_KEY = "document_generator_documents";
 
+// Update the provider to use localStorage for persistence
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -66,12 +67,12 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   );
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load data from sessionStorage on initial mount
+  // Load data from localStorage on initial mount
   useEffect(() => {
     if (typeof window !== "undefined" && !isInitialized) {
       try {
-        const storedBatches = sessionStorage.getItem(BATCHES_STORAGE_KEY);
-        const storedDocuments = sessionStorage.getItem(DOCUMENTS_STORAGE_KEY);
+        const storedBatches = localStorage.getItem(BATCHES_STORAGE_KEY);
+        const storedDocuments = localStorage.getItem(DOCUMENTS_STORAGE_KEY);
 
         if (storedBatches) {
           setBatches(JSON.parse(storedBatches));
@@ -81,24 +82,21 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           setDocuments(JSON.parse(storedDocuments));
         }
       } catch (error) {
-        console.error("Error loading data from sessionStorage:", error);
+        console.error("Error loading data from localStorage:", error);
       }
 
       setIsInitialized(true);
     }
   }, [isInitialized]);
 
-  // Save data to sessionStorage whenever it changes
+  // Save data to localStorage whenever it changes
   useEffect(() => {
     if (typeof window !== "undefined" && isInitialized) {
       try {
-        sessionStorage.setItem(BATCHES_STORAGE_KEY, JSON.stringify(batches));
-        sessionStorage.setItem(
-          DOCUMENTS_STORAGE_KEY,
-          JSON.stringify(documents)
-        );
+        localStorage.setItem(BATCHES_STORAGE_KEY, JSON.stringify(batches));
+        localStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
       } catch (error) {
-        console.error("Error saving data to sessionStorage:", error);
+        console.error("Error saving data to localStorage:", error);
       }
     }
   }, [batches, documents, isInitialized]);
@@ -176,8 +174,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     setDocuments({});
 
     if (typeof window !== "undefined") {
-      sessionStorage.removeItem(BATCHES_STORAGE_KEY);
-      sessionStorage.removeItem(DOCUMENTS_STORAGE_KEY);
+      localStorage.removeItem(BATCHES_STORAGE_KEY);
+      localStorage.removeItem(DOCUMENTS_STORAGE_KEY);
     }
   };
 

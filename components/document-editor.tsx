@@ -1,37 +1,51 @@
-"use client"
+"use client";
 
-import type React from "react"
-
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Save, X } from "lucide-react"
+import { useState } from "react";
+import { useDocuments } from "@/lib/document-context";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Save, X } from "lucide-react";
 
 interface DocumentEditorProps {
   document: {
-    id: string
-    title: string
-    data: Record<string, string>
-    placeholders?: string[]
-    csvHeaders?: string[]
-  }
-  onSave: (documentId: string, updatedData: Record<string, string>) => void
-  onCancel: () => void
+    id: string;
+    title: string;
+    data: Record<string, string>;
+    placeholders?: string[];
+    csvHeaders?: string[];
+  };
+  onSave?: () => void;
+  onCancel: () => void;
 }
 
-export default function DocumentEditor({ document, onSave, onCancel }: DocumentEditorProps) {
-  const [formData, setFormData] = useState<Record<string, string>>(document.data)
+export default function DocumentEditor({
+  document,
+  onSave,
+  onCancel,
+}: DocumentEditorProps) {
+  const { updateDocument } = useDocuments();
+  const [editedDocument, setEditedDocument] = useState(document);
+  const [formData, setFormData] = useState<Record<string, string>>(
+    document.data
+  );
 
   const handleChange = (key: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [key]: value }))
-  }
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSave(document.id, formData)
-  }
+    e.preventDefault();
+    updateDocument(editedDocument);
+    onSave?.();
+  };
 
   // Update the document editor to show all available fields from the CSV
   // Modify the fieldsToEdit logic to include all CSV headers
@@ -39,12 +53,12 @@ export default function DocumentEditor({ document, onSave, onCancel }: DocumentE
   // Determine which fields to show in the editor
   // If placeholders are provided, prioritize those
   // Otherwise, show all fields in the data
-  const fieldsToEdit = document.placeholders || Object.keys(document.data)
+  const fieldsToEdit = document.placeholders || Object.keys(document.data);
 
   // Add a section to show CSV headers that aren't being used
   const unusedCsvHeaders = document.csvHeaders
     ? document.csvHeaders.filter((header) => !fieldsToEdit.includes(header))
-    : []
+    : [];
 
   return (
     <Card className="w-full">
@@ -66,7 +80,11 @@ export default function DocumentEditor({ document, onSave, onCancel }: DocumentE
                     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
                     .join(" ")}
                 </Label>
-                <Input id={key} value={formData[key] || ""} onChange={(e) => handleChange(key, e.target.value)} />
+                <Input
+                  id={key}
+                  value={formData[key] || ""}
+                  onChange={(e) => handleChange(key, e.target.value)}
+                />
               </div>
             ))}
           </div>
@@ -74,17 +92,23 @@ export default function DocumentEditor({ document, onSave, onCancel }: DocumentE
         {unusedCsvHeaders.length > 0 && (
           <div className="mt-4 p-3 bg-muted rounded-md">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm font-medium">Additional CSV Fields (Not Used)</span>
+              <span className="text-sm font-medium">
+                Additional CSV Fields (Not Used)
+              </span>
             </div>
             <div className="flex flex-wrap gap-2">
               {unusedCsvHeaders.map((header) => (
-                <div key={header} className="text-xs bg-background px-2 py-1 rounded border">
+                <div
+                  key={header}
+                  className="text-xs bg-background px-2 py-1 rounded border"
+                >
                   {header}
                 </div>
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              These fields are in your CSV but don't match any placeholders in your template.
+              These fields are in your CSV but don't match any placeholders in
+              your template.
             </p>
           </div>
         )}
@@ -99,6 +123,5 @@ export default function DocumentEditor({ document, onSave, onCancel }: DocumentE
         </Button>
       </CardFooter>
     </Card>
-  )
+  );
 }
-
