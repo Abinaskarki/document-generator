@@ -4,6 +4,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   doc,
   updateDoc,
 } from "firebase/firestore";
@@ -26,18 +27,11 @@ export async function GET(
       );
     }
 
-    // Fetch documents for the batch
-    const documentsQuery = query(
-      collection(db, "documents"),
-      where("batchId", "==", batchId)
-    );
-    const documentsSnapshot = await getDocs(documentsQuery);
-    const documents = documentsSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    // Fetch the batch document from Firestore
+    const batchRef = doc(db, "batches", batchId);
+    const batchSnap = await getDoc(batchRef);
 
-    if (documents.length === 0) {
+    if (!batchSnap.exists()) {
       return NextResponse.json(
         {
           error: "Batch not found",
@@ -47,16 +41,18 @@ export async function GET(
       );
     }
 
+    // Return the batch data
+    const batchData = batchSnap.data();
     return NextResponse.json({
       batchId,
-      documents,
+      ...batchData,
       success: true,
     });
   } catch (error) {
-    console.error("Error fetching documents:", error);
+    console.error("Error fetching batch:", error);
     return NextResponse.json(
       {
-        error: "Failed to fetch documents",
+        error: "Failed to fetch batch",
         details:
           error instanceof Error ? error.message : "Unknown error occurred",
       },

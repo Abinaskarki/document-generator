@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { parseCSV, processTemplate } from "@/lib/document-processor";
 import { v4 as uuidv4 } from "uuid";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, doc, setDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db } from "@/lib/firebase";
 import puppeteer from "puppeteer";
@@ -36,13 +36,21 @@ export async function POST(request: NextRequest) {
       `templates/${batchId}/${templateHtml.name}`
     );
     await uploadBytes(templateRef, new Uint8Array(templateBuffer));
-    const templateUrl = await getDownloadURL(templateRef);
+    const templateDownloadUrl = await getDownloadURL(templateRef);
+    const templatePublicUrl = `https://firebasestorage.googleapis.com/v0/b/${
+      storage.app.options.storageBucket
+    }/o/${encodeURIComponent(
+      `templates/${batchId}/${templateHtml.name}`
+    )}?alt=media`;
 
     // Upload the original CSV file to Firebase Storage
     const csvBuffer = await csvFile.arrayBuffer();
     const csvRef = ref(storage, `csv/${batchId}/${csvFile.name}`);
     await uploadBytes(csvRef, new Uint8Array(csvBuffer));
-    const csvUrl = await getDownloadURL(csvRef);
+    const csvDownloadUrl = await getDownloadURL(csvRef);
+    const csvPublicUrl = `https://firebasestorage.googleapis.com/v0/b/${
+      storage.app.options.storageBucket
+    }/o/${encodeURIComponent(`csv/${batchId}/${csvFile.name}`)}?alt=media`;
 
     // Parse the CSV file
     const csvContent = new TextDecoder().decode(csvBuffer);
@@ -85,17 +93,34 @@ export async function POST(request: NextRequest) {
       pdfPages.map((page) => page.slice().buffer)
     );
 
-    // Upload the generated PDF to Firebase Storage
+    // Upload the generated PDF to Firebase Storage with metadata
     const pdfRef = ref(storage, `pdf/${batchId}/generated-document.pdf`);
-    await uploadBytes(pdfRef, pdfBuffer);
-    const pdfUrl = await getDownloadURL(pdfRef);
+    const pdfMetadata = {
+      contentType: "application/pdf", // Explicitly set the Content-Type
+    };
+    await uploadBytes(pdfRef, pdfBuffer, pdfMetadata);
+    const pdfDownloadUrl = await getDownloadURL(pdfRef);
+    const pdfPublicUrl = `https://firebasestorage.googleapis.com/v0/b/${
+      storage.app.options.storageBucket
+    }/o/${encodeURIComponent(
+      `pdf/${batchId}/generated-document.pdf`
+    )}?alt=media`;
 
     // Store batch metadata in Firestore
-    await addDoc(collection(db, "batches"), {
+    await setDoc(doc(db, "batches", batchId), {
       id: batchId,
-      templateUrl,
-      csvUrl,
-      pdfUrl,
+      template: {
+        downloadUrl: templateDownloadUrl,
+        publicUrl: templatePublicUrl,
+      },
+      csv: {
+        downloadUrl: csvDownloadUrl,
+        publicUrl: csvPublicUrl,
+      },
+      pdf: {
+        downloadUrl: pdfDownloadUrl,
+        publicUrl: pdfPublicUrl,
+      },
       documentCount: csvData.length,
       csvHeaders: Object.keys(csvData[0]),
     });
@@ -104,7 +129,7 @@ export async function POST(request: NextRequest) {
       batchId,
       documentCount: csvData.length,
       csvHeaders: Object.keys(csvData[0]),
-      pdfUrl,
+      pdfPublicUrl,
       success: true,
     });
   } catch (error) {
