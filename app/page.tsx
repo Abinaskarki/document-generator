@@ -5,6 +5,7 @@ import HistoryList from "@/components/history-list";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
+import UploadStepsForm from "@/components/upload-steps-form";
 
 export default function Home() {
   return (
@@ -34,9 +35,13 @@ export default function Home() {
             <TabsList className="grid w-full grid-cols-2 mb-8">
               <TabsTrigger value="upload">Upload Your Template</TabsTrigger>
               <TabsTrigger value="default">Use Default Templates</TabsTrigger>
+              <TabsTrigger value="steps">Use Steps</TabsTrigger>
             </TabsList>
             <TabsContent value="upload">
               <UploadForm />
+            </TabsContent>
+            <TabsContent value="steps">
+              <UploadStepsForm />
             </TabsContent>
             <TabsContent value="default">
               <DefaultTemplates />
