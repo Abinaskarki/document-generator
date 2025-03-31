@@ -31,21 +31,21 @@ export default function Home() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
-          <Tabs defaultValue="upload" className="w-full">
+          <Tabs defaultValue="steps" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-8">
-              <TabsTrigger value="upload">Upload Your Template</TabsTrigger>
-              <TabsTrigger value="default">Use Default Templates</TabsTrigger>
+              {/* <TabsTrigger value="upload">Upload Your Template</TabsTrigger>
+              <TabsTrigger value="default">Use Default Templates</TabsTrigger> */}
               <TabsTrigger value="steps">Use Steps</TabsTrigger>
             </TabsList>
-            <TabsContent value="upload">
+            {/* <TabsContent value="upload">
               <UploadForm />
-            </TabsContent>
+            </TabsContent> */}
             <TabsContent value="steps">
               <UploadStepsForm />
             </TabsContent>
-            <TabsContent value="default">
+            {/* <TabsContent value="default">
               <DefaultTemplates />
-            </TabsContent>
+            </TabsContent> */}
           </Tabs>
         </div>
         {/* 
