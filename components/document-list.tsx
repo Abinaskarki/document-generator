@@ -2,145 +2,65 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { FileText, Download, Edit, Eye, AlertTriangle } from "lucide-react";
-import DocumentPreview from "./document-preview";
-import DocumentEditor from "./document-editor";
-import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import db from "@/lib/in-memory-db";
+import { AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getStorage, ref, getDownloadURL } from "firebase/storage";
 
 interface DocumentListProps {
   batchId: string;
+  documentId: string; // Add documentId to props
 }
 
 export default function DocumentList({ batchId }: DocumentListProps) {
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documentData, setDocumentData] = useState<any | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeDocument, setActiveDocument] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
 
-  // Fetch documents from the in-memory database or API
   useEffect(() => {
-    const fetchDocuments = async () => {
-      console.log(`Fetching documents for batch ${batchId}`);
+    const fetchDocument = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        // Initialize the database
-        await db.init();
+        // Initialize Firestore
+        const db = getFirestore();
+        const docRef = doc(db, "batches", batchId, "documents", documentId);
+        const docSnap = await getDoc(docRef);
 
-        // Try to get documents from the in-memory database
-        const docs = db.getDocumentsByBatchId(batchId);
-
-        // If no documents found in the database, fetch from API
-        if (docs.length === 0) {
-          const response = await fetch(`/api/documents/${batchId}`);
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || "Failed to fetch documents");
-          }
-
-          // Store the fetched documents in our state
-          setDocuments(data.documents || []);
-        } else {
-          // Use documents from the in-memory database
-          setDocuments(docs);
+        if (!docSnap.exists()) {
+          throw new Error("Document not found");
         }
+
+        // Set the document data
+        setDocumentData(docSnap.data());
+
+        // Fetch the PDF URL from Firebase Storage
+        const storage = getStorage();
+        const pdfRef = ref(storage, `pdf/${batchId}/${documentId}.pdf`);
+        const url = await getDownloadURL(pdfRef);
+        setPdfUrl(url);
       } catch (err) {
-        console.error("Error fetching documents:", err);
+        console.error("Error fetching document:", err);
         setError(
-          err instanceof Error ? err.message : "Failed to fetch documents"
+          err instanceof Error ? err.message : "Failed to fetch document"
         );
-        setDocuments([]);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchDocuments();
-  }, [batchId]);
-
-  const handleEdit = (documentId: string) => {
-    setActiveDocument(documentId);
-    setIsEditing(true);
-  };
-
-  const handlePreview = (documentId: string) => {
-    setActiveDocument(documentId);
-    setIsEditing(false);
-  };
-
-  const handleClosePreview = () => {
-    setActiveDocument(null);
-  };
-
-  const handleSaveEdit = async (
-    documentId: string,
-    updatedData: Record<string, string>
-  ) => {
-    try {
-      // Update the document in the in-memory database
-      await db.init();
-      const updatedDoc = db.updateDocument(documentId, { data: updatedData });
-
-      // If not in the database, update via API
-      if (!updatedDoc) {
-        const response = await fetch(`/api/documents/${batchId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            documentId,
-            data: updatedData,
-          }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to update document");
-        }
-      }
-
-      // Update local state
-      setDocuments(
-        documents.map((doc) => {
-          if (doc.id === documentId) {
-            return { ...doc, data: updatedData };
-          }
-          return doc;
-        })
-      );
-
-      // Update the active document state
-      setActiveDocument((prev) =>
-        prev ? { ...prev, data: updatedData } : null
-      );
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Error saving document:", error);
-      // You could show an error message here
-    }
-  };
-
-  const activeDoc = documents.find((doc) => doc.id === activeDocument);
+    fetchDocument();
+  }, [batchId, documentId]);
 
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-500">Loading documents...</p>
+          <p className="text-gray-500">Loading document...</p>
         </div>
       </div>
     );
@@ -150,7 +70,7 @@ export default function DocumentList({ batchId }: DocumentListProps) {
     return (
       <Alert variant="destructive" className="mb-6">
         <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>Error loading documents</AlertTitle>
+        <AlertTitle>Error loading document</AlertTitle>
         <AlertDescription>{error}</AlertDescription>
         <div className="mt-4">
           <Link href="/">
@@ -161,84 +81,44 @@ export default function DocumentList({ batchId }: DocumentListProps) {
     );
   }
 
-  if (documents.length === 0) {
+  if (!documentData) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500 mb-4">No documents found for this batch.</p>
+        <p className="text-gray-500 mb-4">No document found for this ID.</p>
         <Link href="/">
-          <Button>Create New Documents</Button>
+          <Button>Create New Document</Button>
         </Link>
       </div>
     );
   }
 
+  if (!pdfUrl) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-gray-500">No PDF available for this document.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {activeDocument && activeDoc ? (
-        isEditing ? (
-          <DocumentEditor
-            document={activeDoc}
-            onSave={handleSaveEdit}
-            onCancel={handleClosePreview}
-          />
-        ) : (
-          <DocumentPreview
-            document={activeDoc}
-            onClose={handleClosePreview}
-            onEdit={() => {
-              setIsEditing(true);
-              setActiveDocument(activeDoc); // Update the active document state after editing
-            }}
-          />
-        )
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {documents.map((doc) => (
-            <Card key={doc.id}>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  {doc.title}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-500">
-                  {doc.preview || "Preview not available"}
-                </p>
-                {doc.originalFormat && (
-                  <div className="mt-2">
-                    <span className="text-xs px-2 py-1 bg-muted rounded-full">
-                      {doc.originalFormat.toUpperCase()}
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-              <CardFooter className="flex justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePreview(doc.id)}
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Preview
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleEdit(doc.id)}
-                >
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
-                <Button variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-2" />
-                  PDF
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      )}
+    <div className="flex flex-col items-center justify-center py-10">
+      <h2 className="text-2xl font-bold mb-4">Generated PDF</h2>
+      <p className="text-gray-600 mb-6">
+        The generated PDF for document <strong>{documentId}</strong> is
+        available below.
+      </p>
+      <div className="flex flex-col items-center gap-4">
+        <Button asChild>
+          <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
+            View PDF
+          </a>
+        </Button>
+        <Button variant="outline" asChild>
+          <a href={pdfUrl} download={`document-${documentId}.pdf`}>
+            Download PDF
+          </a>
+        </Button>
+      </div>
     </div>
   );
 }

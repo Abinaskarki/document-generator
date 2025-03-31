@@ -2,6 +2,15 @@
 
 import type React from "react";
 import { createContext, useContext, useState, useEffect } from "react";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 // Define types for our document data
 export interface DocumentBatch {
@@ -129,7 +138,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const addDocuments = (batchId: string, docs: DocumentData[]) => {
     setDocuments((prev) => ({
       ...prev,
-      [batchId]: docs,
+      [batchId]: docs as DocumentData[],
     }));
   };
 
@@ -181,6 +190,55 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // Fetch batch information from Firebase
+  const fetchBatchFromFirebase = async (batchId: string) => {
+    try {
+      // Fetch batch metadata
+      const batchDoc = await getDoc(doc(db, "batches", batchId));
+      if (!batchDoc.exists()) {
+        console.error(`Batch with ID ${batchId} not found.`);
+        return null;
+      }
+
+      const batchData = batchDoc.data();
+
+      // Fetch documents for the batch
+      const documentsQuery = query(
+        collection(db, "documents"),
+        where("batchId", "==", batchId)
+      );
+      const documentsSnapshot = await getDocs(documentsQuery);
+      const docs = documentsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      const batch: DocumentBatch = {
+        batchId: batchData.batchId as string,
+        templateId: batchData.templateId as string,
+        documentCount: docs.length,
+        timestamp: (batchData.timestamp as number) || Date.now(),
+        title:
+          (batchData.title as string) || `${batchData.templateId} Template`,
+        placeholders: batchData.placeholders,
+        matchedPlaceholders: batchData.matchedPlaceholders,
+        unmatchedPlaceholders: batchData.unmatchedPlaceholders,
+        csvHeaders: batchData.csvHeaders,
+        originalFormat: batchData.originalFormat,
+      };
+
+      setBatches((prev) => [...prev, batch]); // Cache the batch in local state
+      setDocuments((prev) => ({
+        ...prev,
+        [batchId]: docs,
+      }));
+      return batch;
+    } catch (error) {
+      console.error("Error fetching batch from Firebase:", error);
+      return null;
+    }
+  };
+
   return (
     <DocumentContext.Provider
       value={{
@@ -192,6 +250,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         getDocumentsByBatchId,
         updateDocument,
         clearAll,
+        fetchBatchFromFirebase,
       }}
     >
       {children}

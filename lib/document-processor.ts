@@ -1,8 +1,9 @@
 import Papa from "papaparse";
-import PizZip from "pizzip";
-import Docxtemplater from "docxtemplater";
+import mammoth from "mammoth";
 import { saveAs } from "file-saver";
+import PizZip from "pizzip";
 
+// Parse CSV file
 export async function parseCSV(
   csvContent: string
 ): Promise<Record<string, string>[]> {
@@ -17,7 +18,6 @@ export async function parseCSV(
             .join("; ");
           console.warn("CSV parsing had errors:", results.errors);
 
-          // If there are critical errors that prevent parsing, reject
           if (
             results.errors.some(
               (e) => e.type === "Delimiter" || e.type === "FieldMismatch"
@@ -28,20 +28,17 @@ export async function parseCSV(
           }
         }
 
-        // Make sure we have valid data
         if (!results.data || results.data.length === 0) {
           reject(new Error("No valid data found in CSV"));
           return;
         }
 
-        // Validate that we have headers
         const firstRow = results.data[0] as Record<string, string>;
         if (Object.keys(firstRow).length === 0) {
           reject(new Error("CSV file has no headers"));
           return;
         }
 
-        // Check for empty header names (which can happen with trailing commas)
         const emptyHeaders = Object.keys(firstRow).filter(
           (key) => key.trim() === ""
         );
@@ -74,7 +71,6 @@ export function processTemplate(
 
   let result = template;
 
-  // First, find all placeholders in the template
   const placeholderRegex = /{([^{}]+)}/g;
   const placeholders = new Set<string>();
   let match;
@@ -87,8 +83,6 @@ export function processTemplate(
     throw new Error("No placeholders found in template");
   }
 
-  // Replace all placeholders with the corresponding value from data
-  // If a placeholder doesn't have a corresponding value, leave it unchanged
   placeholders.forEach((placeholder) => {
     const regex = new RegExp(`{${placeholder}}`, "g");
     if (data[placeholder] !== undefined) {
@@ -99,56 +93,66 @@ export function processTemplate(
   return result;
 }
 
-// Process DOCX templates using docxtemplater
+// Process DOCX templates using Mammoth
 export async function processDocxTemplate(
   docxBuffer: ArrayBuffer,
   data: Record<string, string>
-): Promise<Uint8Array> {
+): Promise<string> {
   if (!docxBuffer || docxBuffer.byteLength === 0) {
     throw new Error("DOCX file is empty");
   }
 
   try {
-    // Load the docx file as a binary
-    const zip = new PizZip(docxBuffer);
-
-    // Initialize docxtemplater with the loaded zip file
-    const doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true,
-    });
-
-    // Set the template variables
-    // doc.setData(data)
-
-    try {
-      // Render the document (replace all variables with their values)
-      console.log(data);
-      doc.render(data);
-    } catch (error) {
-      console.error("Error rendering document:", error);
-      throw new Error(
-        `Failed to render document: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-
-    // Get the zip file as a Uint8Array (works in both browser and Node.js)
-    const out = doc.getZip().generate({
-      type: "uint8array",
-      mimeType:
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    });
-
-    return out;
-  } catch (error) {
-    console.error("Error processing DOCX template:", error);
-    throw new Error(
-      `Failed to process DOCX template: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`
+    // Convert DOCX to HTML using Mammoth
+    const { value: htmlContent } = await mammoth.convertToHtml(
+      { arrayBuffer: docxBuffer },
+      {
+        styleMap: [
+          "p => p:fresh",
+          "r => span:fresh",
+          "b => strong",
+          "i => em",
+          "u => u",
+          "strike => strike",
+          "h1 => h1:fresh",
+          "h2 => h2:fresh",
+          "h3 => h3:fresh",
+          "h4 => h4:fresh",
+          "h5 => h5:fresh",
+          "h6 => h6:fresh",
+          "ul => ul:fresh",
+          "ol => ol:fresh",
+          "li => li:fresh",
+          "table => table:fresh",
+          "tr => tr:fresh",
+          "td => td:fresh",
+          "th => th:fresh",
+          "blockquote => blockquote:fresh",
+          "pre => pre:fresh",
+          "code => code:fresh",
+        ],
+      }
     );
+
+    // Replace placeholders in the HTML content
+    let processedHtml = htmlContent;
+    Object.keys(data).forEach((key) => {
+      const regex = new RegExp(`{${key}}`, "g");
+      processedHtml = processedHtml.replace(regex, data[key] || "");
+    });
+
+    // Add custom CSS for paragraph spacing
+    const htmlWithStyles = `
+      <style>
+        p { margin-bottom: 1em; }
+      </style>
+      ${processedHtml}
+    `;
+
+    return htmlWithStyles;
+  } catch (error) {
+    console.error("Error processing DOCX template with Mammoth:", error);
+    throw new Error("Failed to process DOCX template");
   }
 }
 
@@ -206,37 +210,29 @@ export function extractPlaceholders(template: string): string[] {
   return Array.from(placeholders);
 }
 
-// Extract placeholders from a DOCX file using docxtemplater
 export async function extractPlaceholdersFromDocx(
   docxBuffer: ArrayBuffer
 ): Promise<string[]> {
   if (!docxBuffer || docxBuffer.byteLength === 0) {
-    throw new Error("DOCX file is empty");
+    throw new Error("DOCX file is empty or invalid");
   }
 
   try {
-    // Load the docx file as a binary
+    // Load the DOCX file as a ZIP archive
     const zip = new PizZip(docxBuffer);
 
-    // Get the document.xml content
-    let content = "";
-    try {
-      // Check if the file exists in the zip
-      if (!zip.files["word/document.xml"]) {
-        throw new Error("Invalid DOCX file: missing document.xml");
-      }
-
-      content = zip.files["word/document.xml"].asText();
-    } catch (e) {
-      console.error("Error reading document.xml:", e);
+    // Check if the file contains "word/document.xml"
+    if (!zip.files["word/document.xml"]) {
       throw new Error(
-        "Invalid DOCX file structure: " +
-          (e instanceof Error ? e.message : String(e))
+        "The DOCX file is missing required content (word/document.xml)"
       );
     }
 
-    // Extract placeholders using regex
-    // Docxtemplater uses {placeholder} format
+    // Extract the content of "word/document.xml"
+    const content = zip.files["word/document.xml"].asText();
+    console.log("Successfully extracted document.xml content");
+
+    // Extract placeholders using a regex
     const placeholderRegex = /{([^{}]+)}/g;
     const placeholders = new Set<string>();
     let match;
@@ -252,11 +248,7 @@ export async function extractPlaceholdersFromDocx(
     return Array.from(placeholders);
   } catch (error) {
     console.error("Error extracting placeholders from DOCX:", error);
-    throw new Error(
-      `Failed to extract placeholders from DOCX: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`
-    );
+    throw new Error("Failed to extract placeholders from DOCX");
   }
 }
 

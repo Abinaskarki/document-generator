@@ -1,13 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server";
-import db from "@/lib/in-memory-db";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  getDoc,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { batchId: string } }
 ) {
   try {
-    const resolvedParams = await params;
-    const batchId = resolvedParams.batchId;
+    const { batchId } = await params;
 
     if (!batchId) {
       return NextResponse.json(
@@ -19,16 +27,11 @@ export async function GET(
       );
     }
 
-    // Initialize the database if needed
-    await db.init();
+    // Fetch the batch document from Firestore
+    const batchRef = doc(db, "batches", batchId);
+    const batchSnap = await getDoc(batchRef);
 
-    // Get batch information
-    const batch = db.getBatchById(batchId);
-
-    // Get documents for this batch
-    const documents = db.getDocumentsByBatchId(batchId);
-
-    if (!batch && documents.length === 0) {
+    if (!batchSnap.exists()) {
       return NextResponse.json(
         {
           error: "Batch not found",
@@ -38,17 +41,18 @@ export async function GET(
       );
     }
 
+    // Return the batch data
+    const batchData = batchSnap.data();
     return NextResponse.json({
       batchId,
-      batch,
-      documents,
+      ...batchData,
       success: true,
     });
   } catch (error) {
-    console.error("Error fetching documents:", error);
+    console.error("Error fetching batch:", error);
     return NextResponse.json(
       {
-        error: "Failed to fetch documents",
+        error: "Failed to fetch batch",
         details:
           error instanceof Error ? error.message : "Unknown error occurred",
       },
@@ -62,52 +66,27 @@ export async function PUT(
   { params }: { params: { batchId: string } }
 ) {
   try {
-    const resolvedParams = await params;
-    const batchId = resolvedParams.batchId;
     const body = await request.json();
+    const { documentId, data } = body;
 
-    if (!batchId) {
+    if (!documentId || !data) {
       return NextResponse.json(
         {
-          error: "Batch ID is required",
-          details: "Please provide a valid batch ID",
+          error: "Invalid request",
+          details: "Request must include documentId and data",
         },
         { status: 400 }
       );
     }
 
-    // Initialize the database if needed
-    await db.init();
+    // Update document in Firestore
+    const documentRef = doc(db, "documents", documentId);
+    await updateDoc(documentRef, { data });
 
-    // Update document
-    if (body.documentId && body.data) {
-      const updatedDoc = db.updateDocument(body.documentId, {
-        data: body.data,
-      });
-
-      if (!updatedDoc) {
-        return NextResponse.json(
-          {
-            error: "Document not found",
-            details: `Document with ID ${body.documentId} not found`,
-          },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        document: updatedDoc,
-      });
-    }
-
-    return NextResponse.json(
-      {
-        error: "Invalid request",
-        details: "Request must include documentId and data",
-      },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: "Document updated successfully",
+    });
   } catch (error) {
     console.error("Error updating document:", error);
     return NextResponse.json(

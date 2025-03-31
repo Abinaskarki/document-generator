@@ -3,12 +3,14 @@ import {
   parseCSV,
   processTemplate,
   processDocxTemplate,
-  extractPlaceholders,
-  extractPlaceholdersFromDocx,
-  arrayBufferToBase64,
 } from "@/lib/document-processor";
 import { v4 as uuidv4 } from "uuid";
-import db from "@/lib/in-memory-db";
+import { collection, addDoc } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db } from "@/lib/firebase";
+import puppeteer from "puppeteer"; // For HTML to PDF conversion
+
+const storage = getStorage();
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,332 +19,104 @@ export async function POST(request: NextRequest) {
     const csvFile = formData.get("csv") as File;
 
     // Validate required files
-    if (!templateFile) {
+    if (!templateFile || !csvFile) {
       return NextResponse.json(
         {
-          error: "Template file is required",
-          details: "Please upload a template file (.docx, .doc, or .html)",
+          error: "Both template and CSV files are required",
+          details: "Please upload a template file and a CSV file",
         },
         { status: 400 }
       );
     }
 
-    if (!csvFile) {
-      return NextResponse.json(
-        {
-          error: "CSV file is required",
-          details: "Please upload a CSV file with data for your template",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate file types
-    const validTemplateTypes = [
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-      "application/msword", // .doc
-      "text/html", // .html
-      "text/plain", // .txt
-    ];
-
-    if (
-      !validTemplateTypes.includes(templateFile.type) &&
-      !templateFile.name.endsWith(".docx") &&
-      !templateFile.name.endsWith(".doc") &&
-      !templateFile.name.endsWith(".html") &&
-      !templateFile.name.endsWith(".txt")
-    ) {
-      return NextResponse.json(
-        {
-          error: "Invalid template file format",
-          details: "Template must be a .docx, .doc, .html, or .txt file",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (csvFile.type !== "text/csv" && !csvFile.name.endsWith(".csv")) {
-      return NextResponse.json(
-        {
-          error: "Invalid CSV file format",
-          details: "Data file must be a valid CSV file",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Generate a unique batch ID for this set of documents
+    // Generate a unique batch ID
     const batchId = `custom-${uuidv4()}`;
 
-    // Read the template file
+    // Upload the original template to Firebase Storage
     const templateBuffer = await templateFile.arrayBuffer();
+    const templateRef = ref(
+      storage,
+      `templates/${batchId}/${templateFile.name}`
+    );
+    await uploadBytes(templateRef, new Uint8Array(templateBuffer));
+    const templateUrl = await getDownloadURL(templateRef);
 
-    // Extract placeholders from the template
-    let placeholders: string[] = [];
-    try {
+    // Upload the original CSV file to Firebase Storage
+    const csvBuffer = await csvFile.arrayBuffer();
+    const csvRef = ref(storage, `csv/${batchId}/${csvFile.name}`);
+    await uploadBytes(csvRef, new Uint8Array(csvBuffer));
+    const csvUrl = await getDownloadURL(csvRef);
+
+    // Parse the CSV file
+    const csvContent = new TextDecoder().decode(csvBuffer);
+    const csvData = await parseCSV(csvContent);
+
+    if (!csvData || csvData.length === 0) {
+      return NextResponse.json(
+        {
+          error: "CSV file is empty or invalid",
+          details:
+            "Your CSV file must contain at least one row of data with headers",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Generate documents and merge them into a single PDF
+    const pdfPages: Uint8Array[] = [];
+    for (const row of csvData) {
       if (
         templateFile.name.endsWith(".docx") ||
         templateFile.name.endsWith(".doc")
       ) {
-        placeholders = await extractPlaceholdersFromDocx(templateBuffer);
+        // Use the processDocxTemplate utility function
+        const htmlWithStyles = await processDocxTemplate(templateBuffer, row);
+
+        // Convert the processed HTML to PDF using Puppeteer
+        const pdfPage = await convertHtmlToPdf(htmlWithStyles);
+        pdfPages.push(pdfPage);
       } else {
-        // For HTML or text templates
+        // Process HTML template and convert to PDF
         const templateContent = new TextDecoder().decode(templateBuffer);
-        placeholders = extractPlaceholders(templateContent);
+        const documentContent = processTemplate(templateContent, row);
+        const pdfPage = await convertHtmlToPdf(documentContent);
+        pdfPages.push(pdfPage);
       }
-
-      if (placeholders.length === 0) {
-        return NextResponse.json(
-          {
-            error: "No placeholders found in template",
-            details:
-              "Your template must contain placeholders in the format {placeholder_name}",
-          },
-          { status: 400 }
-        );
-      }
-
-      console.log("Detected placeholders:", placeholders);
-    } catch (error) {
-      console.error("Error extracting placeholders:", error);
-      return NextResponse.json(
-        {
-          error: "Failed to extract placeholders from template",
-          details:
-            error instanceof Error
-              ? error.message
-              : "Unknown error processing template",
-        },
-        { status: 500 }
-      );
     }
 
-    // Read and parse the CSV file
-    let csvData: Record<string, string>[] = [];
-    let csvHeaders: string[] = [];
-
-    try {
-      const csvBuffer = await csvFile.arrayBuffer();
-      const csvContent = new TextDecoder().decode(csvBuffer);
-
-      csvData = await parseCSV(csvContent);
-
-      if (!csvData || csvData.length === 0) {
-        return NextResponse.json(
-          {
-            error: "CSV file is empty or invalid",
-            details:
-              "Your CSV file must contain at least one row of data with headers",
-          },
-          { status: 400 }
-        );
-      }
-
-      // Extract headers from the CSV data
-      csvHeaders = Object.keys(csvData[0]);
-
-      if (csvHeaders.length === 0) {
-        return NextResponse.json(
-          {
-            error: "No headers found in CSV file",
-            details:
-              "Your CSV file must have headers that match the placeholders in your template",
-          },
-          { status: 400 }
-        );
-      }
-    } catch (csvError) {
-      console.error("CSV parsing error:", csvError);
-      return NextResponse.json(
-        {
-          error: "Failed to parse CSV file",
-          details:
-            csvError instanceof Error ? csvError.message : "Invalid CSV format",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Check if CSV headers match any of the placeholders
-    const matchedPlaceholders = placeholders.filter((p) =>
-      csvHeaders.includes(p)
+    // Create a single PDF from all pages
+    const pdfBuffer = await createPDF(
+      pdfPages.map((page) => page.slice().buffer)
     );
 
-    if (matchedPlaceholders.length === 0) {
-      return NextResponse.json(
-        {
-          error: "No matching placeholders found in CSV headers",
-          details: {
-            message:
-              "Your CSV headers don't match any placeholders in your template",
-            placeholders,
-            csvHeaders,
-          },
-        },
-        { status: 400 }
-      );
-    }
+    // Upload the generated PDF to Firebase Storage
+    const pdfRef = ref(storage, `pdf/${batchId}/generated-document.pdf`);
+    await uploadBytes(pdfRef, pdfBuffer);
+    const pdfUrl = await getDownloadURL(pdfRef);
 
-    // Log the matched placeholders for debugging
-    console.log("Matched placeholders:", matchedPlaceholders);
-    console.log("CSV headers:", csvHeaders);
-    console.log(
-      "Unmatched placeholders:",
-      placeholders.filter((p) => !csvHeaders.includes(p))
-    );
+    // Store batch metadata in Firestore
+    await addDoc(collection(db, "batches"), {
+      id: batchId,
+      templateUrl,
+      csvUrl,
+      pdfUrl,
+      documentCount: csvData.length,
+      placeholders: [], // Add placeholders if needed
+      matchedPlaceholders: [], // Add matched placeholders if needed
+      csvHeaders: Object.keys(csvData[0]),
+      metadata: {
+        templateName: templateFile.name,
+        csvName: csvFile.name,
+      },
+    });
 
-    // Initialize the database
-    await db.init();
-
-    // Process each row of CSV data with the template
-    try {
-      const documents = [];
-      const dbDocuments = [];
-
-      for (let index = 0; index < csvData.length; index++) {
-        const row = csvData[index];
-
-        // Try to find a field that could be used as a title
-        // Look for common title fields first
-        const commonTitleFields = [
-          "name",
-          "title",
-          "id",
-          "subject",
-          "number",
-          "reference",
-          "invoice_number",
-          "receipt_number",
-          "contract_number",
-          "customer_name",
-          "receiver_name",
-        ];
-        let titleField = null;
-
-        for (const field of commonTitleFields) {
-          if (row[field]) {
-            titleField = field;
-            break;
-          }
-        }
-
-        // If no common title field found, use the first field with a value
-        if (!titleField) {
-          for (const field of Object.keys(row)) {
-            if (row[field]) {
-              titleField = field;
-              break;
-            }
-          }
-        }
-
-        const title = titleField
-          ? `Document for ${row[titleField]}`
-          : `Document #${index + 1}`;
-        const documentId = `${batchId}-${index}`;
-        const isDocx =
-          templateFile.name.endsWith(".docx") ||
-          templateFile.name.endsWith(".doc");
-
-        // Process the document based on file type
-        if (isDocx) {
-          // For DOCX templates, we'll process it with docxtemplater
-          const docxData = await processDocxTemplate(templateBuffer, row);
-          // Convert to base64 using our cross-platform function
-          const docxBase64 = arrayBufferToBase64(docxData);
-
-          const docData = {
-            id: documentId,
-            batchId,
-            title,
-            data: row,
-            docxBase64: docxBase64,
-            placeholders: matchedPlaceholders,
-            csvHeaders: csvHeaders,
-            originalFormat: "docx",
-            originalContent: arrayBufferToBase64(templateBuffer), // Store original document content
-          };
-
-          documents.push(docData);
-          dbDocuments.push(docData);
-        } else {
-          // For HTML or text templates
-          const templateContent = new TextDecoder().decode(templateBuffer);
-          const documentContent = processTemplate(templateContent, row);
-
-          const docData = {
-            id: documentId,
-            batchId,
-            title,
-            content: documentContent,
-            data: row,
-            placeholders: matchedPlaceholders,
-            csvHeaders: csvHeaders,
-            originalFormat: "html",
-            originalContent: templateContent, // Store original document content
-          };
-
-          documents.push(docData);
-          dbDocuments.push(docData);
-        }
-      }
-
-      // Create a batch record
-      const batch = db.addBatch({
-        id: batchId,
-        templateId: "custom",
-        title: "Custom Template",
-        documentCount: documents.length,
-        placeholders,
-        matchedPlaceholders,
-        csvHeaders,
-        originalFormat:
-          templateFile.name.endsWith(".docx") ||
-          templateFile.name.endsWith(".doc")
-            ? "docx"
-            : "html",
-        metadata: {
-          templateName: templateFile.name,
-          csvName: csvFile.name,
-          unmatchedPlaceholders: placeholders.filter(
-            (p) => !csvHeaders.includes(p)
-          ),
-        },
-      });
-
-      // Add documents to the database
-      db.addDocuments(dbDocuments);
-
-      // Return additional information about the CSV and placeholders
-      return NextResponse.json({
-        batchId,
-        documentCount: documents.length,
-        placeholders: placeholders,
-        matchedPlaceholders: matchedPlaceholders,
-        unmatchedPlaceholders: placeholders.filter(
-          (p) => !csvHeaders.includes(p)
-        ),
-        csvHeaders: csvHeaders,
-        originalFormat:
-          templateFile.name.endsWith(".docx") ||
-          templateFile.name.endsWith(".doc")
-            ? "docx"
-            : "html",
-        success: true,
-      });
-    } catch (processingError) {
-      console.error("Error processing documents:", processingError);
-      return NextResponse.json(
-        {
-          error: "Failed to process documents",
-          details:
-            processingError instanceof Error
-              ? processingError.message
-              : "Error generating documents from template and data",
-        },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json({
+      batchId,
+      documentCount: csvData.length,
+      csvHeaders: Object.keys(csvData[0]),
+      pdfUrl,
+      success: true,
+    });
   } catch (error) {
     console.error("Error processing files:", error);
     return NextResponse.json(
@@ -354,4 +128,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Helper function to convert HTML to PDF using Puppeteer
+async function convertHtmlToPdf(htmlContent: string): Promise<Uint8Array> {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  await page.setContent(htmlContent);
+  const pdfBuffer = await page.pdf({ format: "A4" });
+  await browser.close();
+  return pdfBuffer;
 }
