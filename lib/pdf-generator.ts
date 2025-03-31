@@ -8,7 +8,7 @@ import { PDFDocument, rgb } from "pdf-lib";
 export async function createPDF(
   pages: (string | ArrayBuffer)[]
 ): Promise<Uint8Array> {
-  // Create a new PDF document
+  // Create a new PDF docume
   const pdfDoc = await PDFDocument.create();
 
   for (const pageContent of pages) {
