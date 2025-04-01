@@ -69,8 +69,15 @@ export default function TemplateStep({
       const { value: htmlContent } = await import("mammoth").then((m) =>
         m.convertToHtml({ arrayBuffer })
       );
-      setTemplatePreview(htmlContent);
 
+      const styledHtmlContent = `
+      <style>
+        p { margin-bottom: 1em; }
+      </style>
+      ${htmlContent}
+     `;
+
+      setTemplatePreview(styledHtmlContent);
       // Extract placeholders
       const matches = htmlContent.match(/{(.*?)}/g) || [];
       setPlaceholders(
