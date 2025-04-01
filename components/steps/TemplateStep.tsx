@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
 // The quill-image-resize-module-react package does not have a ts type defined, so we have to ignore the ts error
 // @ts-ignore
-import ImageResize from "quill-image-resize-module-react";
+// import ImageResize from "quill-image-resize-module-react";
 
 // Dynamically import ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill-new"), {
@@ -49,7 +49,7 @@ export default function TemplateStep({
     // Dynamically import Quill and register the required modules and formats
     if (typeof window !== "undefined") {
       import("react-quill-new").then(({ Quill }) => {
-        Quill.register("modules/imageResize", ImageResize);
+        // Quill.register("modules/imageResize", ImageResize);
 
         // Explicitly register the list and bullet formats
         const List = Quill.import("formats/list");
@@ -205,7 +205,7 @@ function TemplateEditor({
       ["bold", "italic", "underline", "strike"],
       [{ list: "ordered" }, { list: "bullet" }],
       [{ color: [] }, { background: [] }],
-      ["link", "image"],
+      ["link"],
       ["clean"],
     ],
   };

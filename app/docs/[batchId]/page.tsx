@@ -178,15 +178,6 @@ export default function DocumentBatchPage({
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-4">
-            <Button variant="outline" asChild>
-              <a
-                href={batchInfo.pdfDownloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View PDF
-              </a>
-            </Button>
             <Button
               variant="outline"
               onClick={() => downloadZippedPDF(batchInfo.id)}
@@ -194,12 +185,13 @@ export default function DocumentBatchPage({
               Download Zipped PDF
             </Button>
             <Button variant="outline" onClick={() => setIsModalOpen(true)}>
-              Send Zipped PDF via Email
+              Send PDF via Email
             </Button>
           </div>
         </CardContent>
       </Card>
       <div className="w-full h-[80vh] border border-gray-300 rounded-lg overflow-hidden">
+        <h2 className="text-lg font-semibold my-4 mx-2"> PDF Viewer</h2>
         {batchInfo.pdf.downloadUrl ? (
           <iframe
             src={`${batchInfo.pdf.downloadUrl}`}
