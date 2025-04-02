@@ -44,6 +44,7 @@ export default function TemplateStep({
   const [editorContent, setEditorContent] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
     // Dynamically import Quill and register the required modules and formats
@@ -60,6 +61,17 @@ export default function TemplateStep({
     // Handle hydration issues with ReactQuill
     setMounted(true);
   }, []);
+
+  const handleFileChange = (file: File | null) => {
+    setFile(file);
+    if (file) {
+      handleTemplateUpload(file);
+    } else {
+      setTemplatePreview(null);
+      setTemplateFile(null);
+      setPlaceholders([]);
+    }
+  };
 
   const handleTemplateUpload = async (file: File) => {
     setTemplateFile(file);
@@ -132,7 +144,7 @@ export default function TemplateStep({
         <FileUploader
           id="template"
           accept=".docx,.doc,.html"
-          onChange={handleTemplateUpload}
+          onChange={handleFileChange}
           value={templateFile}
           placeholder="Upload document template (.docx, .doc, .html)"
         />
