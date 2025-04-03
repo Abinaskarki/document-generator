@@ -5,6 +5,7 @@ import { FileUploader } from "@/components/file-uploader";
 import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
+import { set } from "date-fns";
 // The quill-image-resize-module-react package does not have a ts type defined, so we have to ignore the ts error
 // @ts-ignore
 // import ImageResize from "quill-image-resize-module-react";
@@ -63,12 +64,13 @@ export default function TemplateStep({
   }, []);
 
   const handleFileChange = (file: File | null) => {
+    setTemplateFile(file);
     setFile(file);
     if (file) {
       handleTemplateUpload(file);
     } else {
       setTemplatePreview(null);
-      setTemplateFile(null);
+      setTemplateHtml(null);
       setPlaceholders([]);
     }
   };
