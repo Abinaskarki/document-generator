@@ -4,6 +4,7 @@ import { useState } from "react";
 import TemplateStep from "./steps/TemplateStep";
 import DataStep from "./steps/DataStep";
 import PreviewStep from "./steps/PreviewStep";
+import DocumentBatchPage from "./DocumentsBatchPage"; // Import the DocumentBatchPage component
 import { useRouter } from "next/navigation";
 
 export default function UploadStepsForm() {
@@ -19,6 +20,7 @@ export default function UploadStepsForm() {
   const [templateHtml, setTemplateHtml] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null); // State to store the batch ID
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +72,8 @@ export default function UploadStepsForm() {
       }
 
       const data = await response.json();
-      router.push(`/docs/${data.batchId}`);
+      setBatchId(data.batchId); // Store the batch ID
+      setCurrentStep(4); // Move to the DocumentBatchPage step
 
       console.log("Documents generated successfully:", data);
       alert("Documents generated successfully!");
@@ -123,8 +126,26 @@ export default function UploadStepsForm() {
           onSubmit={handleSubmit} // Pass handleSubmit to PreviewStep
         />
       )}
-      {isLoading && <p>Loading...</p>}
-      {error && <p className="text-red-500">{error}</p>}
+      {currentStep === 4 && batchId && (
+        <DocumentBatchPage params={{ batchId }} /> // Render DocumentBatchPage with the batch ID
+      )}
+
+      {/* Progress Bar */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-96 text-center">
+            <div className="relative w-full h-2 bg-gray-200 rounded">
+              <div className="absolute top-0 left-0 h-2 bg-primary rounded animate-pulse w-3/4"></div>
+            </div>
+            <p className="text-sm text-gray-500 mt-4">
+              Generating documents...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && <p className="text-red-500 mt-4">{error}</p>}
     </div>
   );
 }

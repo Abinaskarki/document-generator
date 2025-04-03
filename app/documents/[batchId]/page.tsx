@@ -46,7 +46,7 @@ import "@react-pdf-viewer/default-layout/lib/styles/index.css";
 //     ),
 //   { ssr: false }
 // );
-export default function DocumentBatchPage({
+export default function DocumentBatchPage2({
   params,
 }: {
   params: { batchId: string };
