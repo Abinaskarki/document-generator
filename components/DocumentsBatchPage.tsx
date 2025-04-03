@@ -20,6 +20,7 @@ export default function DocumentBatchPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false); // New state for email sending
   const [emailDetails, setEmailDetails] = useState({
     recipient: "",
     subject: "",
@@ -89,6 +90,7 @@ export default function DocumentBatchPage({
   };
 
   const sendEmail = async () => {
+    setIsSendingEmail(true); // Set loading state to true
     try {
       const response = await fetch("/api/send-email", {
         method: "POST",
@@ -112,6 +114,8 @@ export default function DocumentBatchPage({
     } catch (error) {
       console.error("Error sending email:", error);
       alert("Failed to send email. Please try again.");
+    } finally {
+      setIsSendingEmail(false); // Reset loading state
     }
   };
 
@@ -259,7 +263,9 @@ export default function DocumentBatchPage({
               <Button variant="outline" onClick={() => setIsModalOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={sendEmail}>Send</Button>
+              <Button onClick={sendEmail} disabled={isSendingEmail}>
+                {isSendingEmail ? "Sending..." : "Send"}
+              </Button>
             </div>
           </div>
         </div>
