@@ -5,10 +5,8 @@ import { FileUploader } from "@/components/file-uploader";
 import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
-import { set } from "date-fns";
-// The quill-image-resize-module-react package does not have a ts type defined, so we have to ignore the ts error
-// @ts-ignore
-// import ImageResize from "quill-image-resize-module-react";
+import { TEMPLATES } from "@/lib/default-templates";
+import { defaultTemplates } from "@/components/default-templates"; // Import default templates
 
 // Dynamically import ReactQuill to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill-new"), {
@@ -48,6 +46,7 @@ export default function TemplateStep({
   const [file, setFile] = useState<File | null>(null);
 
   useEffect(() => {
+    // Handle hydration issues with ReactQuill
     // Dynamically import Quill and register the required modules and formats
     if (typeof window !== "undefined") {
       import("react-quill-new").then(({ Quill }) => {
@@ -58,8 +57,6 @@ export default function TemplateStep({
         Quill.register("formats/list", List);
       });
     }
-
-    // Handle hydration issues with ReactQuill
     setMounted(true);
   }, []);
 
@@ -134,6 +131,21 @@ export default function TemplateStep({
     setIsEditorOpen(true);
   };
 
+  const handleSelectDefaultTemplate = (template: {
+    name: string;
+    content: string;
+  }) => {
+    setTemplateName(template.name);
+    setTemplatePreview(template.content);
+    setTemplateHtml(template.content);
+
+    // Extract placeholders
+    const matches = template.content.match(/{(.*?)}/g) || [];
+    setPlaceholders(
+      matches.map((placeholder) => placeholder.replace(/[{}]/g, ""))
+    );
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">
@@ -150,6 +162,20 @@ export default function TemplateStep({
           value={templateFile}
           placeholder="Upload document template (.docx, .doc, .html)"
         />
+        <div>
+          <h3 className="text-sm font-medium mb-2">Default Templates</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {TEMPLATES.map((template) => (
+              <Button
+                key={template.id}
+                variant="outline"
+                onClick={() => handleSelectDefaultTemplate(template)}
+              >
+                {template.name}
+              </Button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {templatePreview && (

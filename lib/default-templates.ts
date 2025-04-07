@@ -1,5 +1,18 @@
-const TEMPLATES: Record<string, string> = {
-  invoice: `
+// Define the structure for templates
+interface Template {
+  id: string;
+  name: string;
+  content: string;
+  description: string; // Optional description for the template
+}
+
+// Define the default templates
+export const TEMPLATES: Template[] = [
+  {
+    id: "invoice",
+    name: "Invoice Template",
+    description: "A professional invoice template for billing clients.",
+    content: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -55,9 +68,13 @@ const TEMPLATES: Record<string, string> = {
   </div>
 </body>
 </html>
-  `,
-
-  receipt: `
+    `,
+  },
+  {
+    id: "receipt",
+    name: "Receipt Template",
+    description: "A simple receipt template for recording transactions.",
+    content: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -103,9 +120,13 @@ const TEMPLATES: Record<string, string> = {
   </div>
 </body>
 </html>
-  `,
-
-  contract: `
+    `,
+  },
+  {
+    id: "contract",
+    name: "Contract Template",
+    description: "A formal contract template for agreements.",
+    content: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -161,11 +182,13 @@ const TEMPLATES: Record<string, string> = {
   </div>
 </body>
 </html>
-  `,
-}
+    `,
+  },
+];
 
-export function getDefaultTemplate(templateId: string): string | null {
-  return TEMPLATES[templateId] || null
+// Function to get a template by ID
+export function getDefaultTemplate(templateId: string): Template | null {
+  return TEMPLATES.find((template) => template.id === templateId) || null;
 }
 
 export const DEFAULT_CSV_TEMPLATES = {
@@ -183,9 +206,8 @@ REC-003,Acme Corp,Enterprise License,499.99,2023-10-17`,
 ABC Company,XYZ Corporation,Software development services,2023-11-01,2024-10-31
 Design Studio Inc,Marketing Agency LLC,Brand redesign project,2023-12-01,2024-03-31
 Tech Solutions,Client Company,IT consulting services,2024-01-15,2024-07-15`,
-}
+};
 
 export function getDefaultCSV(templateId: string): string | null {
-  return DEFAULT_CSV_TEMPLATES[templateId] || null
+  return DEFAULT_CSV_TEMPLATES[templateId] || null;
 }
-
